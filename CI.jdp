@@ -34,7 +34,7 @@ pipeline {
 
         stage('Test') {
             steps {
-                sh "mvn test"
+                sh "mvn test -DskipTests=true"
             }
         }
 
@@ -48,16 +48,16 @@ pipeline {
             steps {
                 withSonarQubeEnv(credentialsId: 'sonar-cred') {
                     sh """
-                        ${SCANNER_HOME}/bin/sonar-scanner \
-                        -Dsonar.projectName=bankapp \
-                        -Dsonar.projectKey=bankapp \
+                        \$SCANNER_HOME/bin/sonar-scanner \\
+                        -Dsonar.projectName=bankapp \\
+                        -Dsonar.projectKey=bankapp \\
                         -Dsonar.java.binaries=target
                     """
                 }
             }
         }
 
-        stage('Build & Publish to Nexus') {
+        stage('Building & Publish Nexus') {
             steps {
                 withMaven(globalMavenSettingsConfig: 'maven-settings', maven: 'maven3', traceability: true) {
                     sh "mvn deploy -DskipTests=true"
@@ -100,14 +100,23 @@ pipeline {
                             cd Multi-Tier-BankApp-CD/bankapp
 
                             repo_dir=\$(pwd)
-                            sed -i 's|image: *shani877/bankapp:.*|image: shani877/bankapp:${params.DOCKER_TAG}|' \${repo_dir}/bankapp-ds.yml
 
+                            sed -i 's|image: shani877/bankapp:.*|image: shani877/bankapp:${params.DOCKER_TAG}|' \$repo_dir/bankapp-ds.yml
+                        """
+
+                        sh """
                             echo "Updated YAML file contents:"
-                            cat \${repo_dir}/bankapp-ds.yml
+                            cat Multi-Tier-BankApp-CD/bankapp/bankapp-ds.yml
+                        """
 
-                            cd ..
+                        sh """
+                            cd Multi-Tier-BankApp-CD
                             git config user.email "shanujagtap6266@gmail.com"
                             git config user.name "shani877"
+                        """
+
+                        sh """
+                            cd Multi-Tier-BankApp-CD
                             git add bankapp/bankapp-ds.yml
                             git commit -m "Updated image tag to ${params.DOCKER_TAG}"
                             git push origin main

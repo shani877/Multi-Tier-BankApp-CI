@@ -22,8 +22,7 @@ pipeline {
 
         stage('Git Checkout') {
             steps {
-                // Replace with actual Git checkout command
-                echo 'Repo URL'
+                git branch: 'main', url: 'https://github.com/shani877/Multi-Tier-BankApp-CI.git'
             }
         }
 
@@ -35,7 +34,7 @@ pipeline {
 
         stage('Test') {
             steps {
-                sh "mvn test -DskipTests=true"
+                sh "mvn test"
             }
         }
 
@@ -47,31 +46,31 @@ pipeline {
 
         stage('Sonar Analysis') {
             steps {
-                withSonarQubeEnv('sonar') {
-                    sh '''
-                        $SCANNER_HOME/bin/sonar-scanner \
+                withSonarQubeEnv(credentialsId: 'sonar-cred') {
+                    sh """
+                        ${SCANNER_HOME}/bin/sonar-scanner \
                         -Dsonar.projectName=bankapp \
                         -Dsonar.projectKey=bankapp \
                         -Dsonar.java.binaries=target
-                    '''
+                    """
                 }
             }
         }
 
-        stage('Building & Publish Nexus') {
+        stage('Build & Publish to Nexus') {
             steps {
-                // Replace with actual withMaven usage
-                echo 'withMaven generate (1:29)'
-                sh "mvn deploy -DskipTests=true"
+                withMaven(globalMavenSettingsConfig: 'maven-settings', maven: 'maven3', traceability: true) {
+                    sh "mvn deploy -DskipTests=true"
+                }
             }
         }
 
         stage('Docker Build & Tag') {
             steps {
                 script {
-                    // Replace with actual Docker registry binding
-                    echo 'with DockerRegistry generate'
-                    sh "docker build -t shani877/bankapp:${params.DOCKER_TAG} ."
+                    withDockerRegistry(credentialsId: 'docker-cred') {
+                        sh "docker build -t shani877/bankapp:${params.DOCKER_TAG} ."
+                    }
                 }
             }
         }
@@ -85,9 +84,9 @@ pipeline {
         stage('Docker Push') {
             steps {
                 script {
-                    // Replace with actual Docker registry binding
-                    echo 'with DockerRegistry generate'
-                    sh "docker push shani877/bankapp:${params.DOCKER_TAG}"
+                    withDockerRegistry(credentialsId: 'docker-cred') {
+                        sh "docker push shani877/bankapp:${params.DOCKER_TAG}"
+                    }
                 }
             }
         }
@@ -95,42 +94,24 @@ pipeline {
         stage('Update YAML Manifest in Other Repo') {
             steps {
                 script {
-                    withCredentials([]) {
-                        sh '''
-                            # Clone the CD repo
-                            git clone url
+                    withCredentials([gitUsernamePassword(credentialsId: 'git-cred', gitToolName: 'Default')]) {
+                        sh """
+                            git clone https://github.com/shani877/Multi-Tier-BankApp-CD.git
                             cd Multi-Tier-BankApp-CD/bankapp
 
-                            # List files
-                            ls -l bankapp
+                            repo_dir=\$(pwd)
+                            sed -i 's|image: *shani877/bankapp:.*|image: shani877/bankapp:${params.DOCKER_TAG}|' \${repo_dir}/bankapp-ds.yml
 
-                            # Get the absolute path for the current directory
-                            repo_dir=$(pwd)
-
-                            # Use the absolute path for sed
-                            sed -i 's|image: shani877/bankapp:.*|image:shani877/bankapp:'${DOCKER_TAG}'|'${repo_dir}/bankapp/bankapp-ds.yml
-                        '''
-
-                        // Confirm the change
-                        sh '''
                             echo "Updated YAML file contents:"
-                            cat Multi-Tier-BankApp-CD/bankapp/bankapp-ds.yml
-                        '''
+                            cat \${repo_dir}/bankapp-ds.yml
 
-                        // Configure Git for committing changes and pushing
-                        sh '''
-                            cd Multi-Tier-BankApp-CD
+                            cd ..
                             git config user.email "shanujagtap6266@gmail.com"
                             git config user.name "shani877"
-                        '''
-
-                        // Commit and push the updated YAML file back to the other repository
-                        sh '''
-                            cd Multi-Tier-BankApp-CD
                             git add bankapp/bankapp-ds.yml
-                            git commit -m "Updated image tag to ${DOCKER_TAG}"
+                            git commit -m "Updated image tag to ${params.DOCKER_TAG}"
                             git push origin main
-                        '''
+                        """
                     }
                 }
             }
